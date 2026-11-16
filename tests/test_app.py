@@ -1,11 +1,12 @@
 """Drives the real Qt application headlessly (offscreen platform) with fake windows."""
+import gc
 import random
 
 import pytest
 
 pytest.importorskip("PySide6")
 
-from PySide6.QtCore import QPoint
+from PySide6.QtCore import QCoreApplication, QEvent, QPoint
 from PySide6.QtWidgets import QApplication
 
 from pixelpal.app import PetController
@@ -27,9 +28,17 @@ class FakeDesktop(Platform):
         return list(self.windows)
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="session")
 def qapp():
-    return QApplication.instance() or QApplication([])
+    app = QApplication.instance() or QApplication([])
+    yield app
+    # Shut Qt down while Python is still fully alive. Leaving it to interpreter exit lets
+    # widgets and the application die in random order, which can crash after the tests pass.
+    for widget in app.topLevelWidgets():
+        widget.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    gc.collect()
+    app.shutdown()
 
 
 @pytest.fixture
@@ -38,10 +47,13 @@ def pet(qapp):
     controller.start()
     controller.timer.stop()               # the test drives the clock itself
     yield controller
-    controller.window.close()
-    controller.bubble.close()
+    # Tear everything down now, in a known order, instead of at interpreter exit.
     if controller.tray:
         controller.tray.hide()
+    for obj in (controller.window, controller.bubble, controller):
+        obj.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    qapp.processEvents()
 
 
 def advance(pet, seconds, dt=1 / 30):
