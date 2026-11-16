@@ -163,7 +163,8 @@ class WindowsPlatform(Platform):
 
     def set_autostart(self, enabled: bool) -> None:
         import winreg
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as key:
+        # CreateKeyEx also opens an existing key; a fresh profile may not have the Run key yet.
+        with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as key:
             if enabled:
                 winreg.SetValueEx(key, RUN_VALUE, 0, winreg.REG_SZ, self.launch_command())
             else:
